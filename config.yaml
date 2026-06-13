@@ -1,0 +1,26 @@
+project:
+  name: "doc-rule-checker"
+
+paths:
+  rule_pdf: "rules/your_rule.pdf"
+  sample_xml_dir: "_抽检样本"
+  output_dir: "output"
+
+deepseek:
+  base_url: "https://api.deepseek.com/v1"
+  model: "deepseek-chat"
+  api_key: "your-api-key"
+  timeout_seconds: 60
+  max_retries: 2
+
+execution:
+  max_workers: 8
+  skip_llm_when_no_key: true
+  low_cost_methods_first:
+    - "structure"
+  llm_prescreen_keywords:
+    - "可能"
+    - "大概"
+    - "非常"
+    - "基本"
+    - "通常"

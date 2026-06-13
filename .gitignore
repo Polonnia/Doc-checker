@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+output/
+rules/
+_抽检样本/
+
+plan.md
+
