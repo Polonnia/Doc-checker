@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>规则检查 DAG 可视化平台</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fafc;
+      --border: #dfe7f1;
+      --text: #172033;
+      --muted: #64748b;
+      --blue: #2563eb;
+      --blue-soft: #dbeafe;
+      --purple: #7c3aed;
+      --purple-soft: #ede9fe;
+      --green: #059669;
+      --green-soft: #d1fae5;
+      --orange: #d97706;
+      --orange-soft: #fef3c7;
+      --red: #dc2626;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: Inter, "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+
+    .app {
+      display: grid;
+      grid-template-rows: 72px 1fr;
+      height: 100vh;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 20px;
+      background: rgba(255, 255, 255, 0.96);
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 4px 18px rgba(15, 23, 42, 0.05);
+      z-index: 20;
+    }
+
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .brand-mark {
+      width: 42px; height: 42px; border-radius: 12px;
+      display: grid; place-items: center;
+      color: white; font-weight: 800; letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24);
+    }
+    .brand h1 { margin: 0; font-size: 18px; white-space: nowrap; }
+    .brand p { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
+
+    .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .btn {
+      border: 1px solid var(--border); background: white; color: var(--text);
+      border-radius: 9px; padding: 8px 11px; font-size: 13px;
+      transition: 0.18s ease; display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn:hover { border-color: #9db7e8; color: var(--blue); transform: translateY(-1px); }
+    .btn.primary { background: var(--blue); border-color: var(--blue); color: white; }
+    .btn.primary:hover { background: #1d4ed8; color: white; }
+    .file-input { display: none; }
+
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 310px minmax(420px, 1fr) 390px;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .sidebar, .detail-panel { display: flex; flex-direction: column; }
+    .panel-head { padding: 16px; border-bottom: 1px solid var(--border); }
+    .panel-head h2 { margin: 0; font-size: 15px; }
+    .panel-head p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+
+    .search-box { position: relative; margin-top: 12px; }
+    .search-box input {
+      width: 100%; border: 1px solid var(--border); border-radius: 9px;
+      padding: 9px 11px 9px 34px; outline: none; background: var(--panel-soft);
+    }
+    .search-box input:focus { border-color: #8fb0f1; box-shadow: 0 0 0 3px #dbeafe; }
+    .search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+    .stat { background: var(--panel-soft); border: 1px solid var(--border); padding: 9px; border-radius: 10px; }
+    .stat strong { display: block; font-size: 17px; }
+    .stat span { font-size: 11px; color: var(--muted); }
+
+    .filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 16px 0; }
+    .filter-row select {
+      width: 100%; border: 1px solid var(--border); background: white; border-radius: 8px;
+      padding: 8px; color: var(--text); outline: none; font-size: 12px;
+    }
+
+    .section-title {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px 8px; font-size: 12px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .06em;
+    }
+
+    .rule-list { flex: 1; overflow: auto; padding: 0 10px 12px; }
+    .rule-card {
+      border: 1px solid transparent; border-radius: 10px; padding: 10px;
+      margin-bottom: 8px; background: var(--panel-soft); transition: .16s ease;
+    }
+    .rule-card:hover { background: white; border-color: #b9cdf3; transform: translateY(-1px); }
+    .rule-card.active { background: #eff6ff; border-color: #7ca5ef; box-shadow: 0 0 0 2px rgba(37,99,235,.08); }
+    .rule-card-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+    .rule-id { font-weight: 800; color: var(--blue); font-size: 13px; }
+    .priority { font-size: 11px; color: var(--orange); background: var(--orange-soft); padding: 3px 7px; border-radius: 99px; white-space: nowrap; }
+    .rule-section { margin-top: 5px; font-size: 12px; color: var(--text); font-weight: 650; }
+    .rule-behavior { margin-top: 5px; font-size: 12px; color: var(--muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+    .graph-panel { position: relative; display: flex; flex-direction: column; }
+    .graph-head {
+      height: 52px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--border); background: white;
+    }
+    .graph-head h2 { font-size: 14px; margin: 0; }
+    .legend { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; }
+    .dot.selector { background: var(--green); }
+    .dot.check { background: var(--purple); }
+    .dot.llm { background: var(--orange); }
+
+    .graph-wrap {
+      flex: 1; min-height: 0; position: relative; overflow: hidden;
+      background-color: #fbfdff;
+      background-image: radial-gradient(#dbe4f0 1px, transparent 1px);
+      background-size: 22px 22px;
+    }
+    #graphSvg { width: 100%; height: 100%; display: block; user-select: none; touch-action: none; }
+
+    .graph-controls {
+      position: absolute; right: 14px; bottom: 14px; display: grid; gap: 7px; z-index: 4;
+    }
+    .icon-btn {
+      width: 36px; height: 36px; border-radius: 9px; border: 1px solid var(--border);
+      background: white; display: grid; place-items: center; box-shadow: 0 5px 14px rgba(15,23,42,.08);
+      color: var(--text);
+    }
+    .icon-btn:hover { color: var(--blue); border-color: #9bb8ef; }
+
+    .graph-message {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      color: var(--muted); text-align: center; display: none;
+    }
+
+    .detail-tabs { display: grid; grid-template-columns: 1fr 1fr; padding: 8px; gap: 6px; border-bottom: 1px solid var(--border); }
+    .tab-btn { border: 0; border-radius: 8px; padding: 8px; background: transparent; color: var(--muted); }
+    .tab-btn.active { background: #eff6ff; color: var(--blue); font-weight: 700; }
+    .detail-content { flex: 1; overflow: auto; padding: 14px; }
+    .empty-detail { height: 100%; min-height: 260px; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 24px; }
+    .empty-icon { font-size: 36px; margin-bottom: 10px; }
+
+    .detail-block { border: 1px solid var(--border); border-radius: 11px; overflow: hidden; margin-bottom: 12px; }
+    .detail-block h3 { margin: 0; padding: 10px 12px; background: var(--panel-soft); font-size: 12px; border-bottom: 1px solid var(--border); }
+    .detail-grid { display: grid; grid-template-columns: 110px 1fr; font-size: 12px; }
+    .detail-grid > div { padding: 9px 11px; border-bottom: 1px solid #edf1f6; }
+    .detail-grid > div:nth-last-child(-n+2) { border-bottom: none; }
+    .label { color: var(--muted); background: #fcfdff; }
+    .value { word-break: break-word; }
+    .code {
+      margin: 0; padding: 12px; background: #101827; color: #dbeafe;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { border: 1px solid #b9cdf3; color: var(--blue); background: #eff6ff; padding: 4px 7px; border-radius: 99px; font-size: 11px; }
+    .chip.missing { border-color: #fecaca; color: var(--red); background: #fef2f2; }
+    .badge { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; }
+    .badge.selector { color: var(--green); background: var(--green-soft); }
+    .badge.check { color: var(--purple); background: var(--purple-soft); }
+    .badge.structure { color: var(--blue); background: var(--blue-soft); }
+    .badge.llm { color: var(--orange); background: var(--orange-soft); }
+    .badge.all { color: #475569; background: #e2e8f0; }
+
+    .rule-detail-title { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
+    .rule-detail-title h2 { margin: 0; font-size: 18px; color: var(--blue); }
+    .rule-detail-title p { margin: 5px 0 0; font-size: 12px; color: var(--muted); }
+    .metric-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .metric { padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-soft); }
+    .metric strong { font-size: 18px; display: block; }
+    .metric span { font-size: 11px; color: var(--muted); }
+    .body-text { font-size: 13px; line-height: 1.7; color: #334155; }
+    .example { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 11px; font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
+    .related-node { border: 1px solid var(--border); background: white; border-radius: 9px; padding: 9px; margin-top: 7px; font-size: 12px; }
+    .related-node:hover { border-color: #9fb8e8; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(20px);
+      background: #0f172a; color: white; padding: 10px 14px; border-radius: 9px;
+      opacity: 0; pointer-events: none; transition: .2s ease; z-index: 100; font-size: 13px;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .node-group { cursor: pointer; }
+    .node-group .node-bg { filter: drop-shadow(0 5px 7px rgba(15,23,42,.10)); transition: .16s ease; }
+    .node-group:hover .node-bg { filter: drop-shadow(0 8px 12px rgba(37,99,235,.18)); }
+    .node-group.active .node-bg { stroke: #2563eb !important; stroke-width: 3 !important; }
+    .node-group.dimmed { opacity: .22; }
+    .edge.dimmed { opacity: .08; }
+    .edge.highlight { stroke: #2563eb; stroke-width: 3; opacity: 1; }
+    .node-title { font-size: 13px; font-weight: 700; fill: #172033; pointer-events: none; }
+    .node-meta { font-size: 10.5px; fill: #64748b; pointer-events: none; }
+    .node-rule { font-size: 10px; fill: #2563eb; pointer-events: none; }
+    .layer-label { font-size: 11px; fill: #94a3b8; font-weight: 700; letter-spacing: .08em; }
+
+    @media (max-width: 1180px) {
+      .workspace { grid-template-columns: 260px minmax(400px, 1fr) 340px; }
+    }
+    @media (max-width: 900px) {
+      body { overflow: auto; }
+      .app { height: auto; min-height: 100vh; }
+      .workspace { grid-template-columns: 1fr; grid-template-rows: auto 650px auto; }
+      .sidebar { max-height: 480px; }
+      .detail-panel { min-height: 520px; }
+      .toolbar .optional { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">DAG</div>
+      <div>
+        <h1>规则检查 DAG 可视化平台</h1>
+        <p>自动读取同目录 rules.json 与 rule_dag.json</p>
+      </div>
+    </div>
+    <div class="toolbar">
+      <label class="btn optional" for="nodeFile">导入节点 JSON</label>
+      <input id="nodeFile" class="file-input" type="file" accept=".json,application/json" />
+      <label class="btn optional" for="ruleFile">导入规则 JSON</label>
+      <input id="ruleFile" class="file-input" type="file" accept=".json,application/json" />
+      <button class="btn" id="exportBtn">导出当前数据</button>
+      <button class="btn" id="reloadDataBtn">重新加载数据</button>
+      <button class="btn primary" id="fitBtn">适配画布</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="panel sidebar">
+      <div class="panel-head">
+        <h2>规则与节点检索</h2>
+        <p>点击规则可高亮其关联节点</p>
+        <div class="search-box">
+          <span class="search-icon">⌕</span>
+          <input id="searchInput" placeholder="搜索节点、规则 ID 或描述..." />
+        </div>
+        <div class="stats">
+          <div class="stat"><strong id="nodeCount">0</strong><span>节点</span></div>
+          <div class="stat"><strong id="edgeCount">0</strong><span>依赖边</span></div>
+          <div class="stat"><strong id="ruleCount">0</strong><span>规则</span></div>
+        </div>
+      </div>
+
+      <div class="filter-row">
+        <select id="typeFilter">
+          <option value="all">全部节点类型</option>
+          <option value="selector">Selector</option>
+          <option value="check">Check</option>
+        </select>
+        <select id="operationFilter">
+          <option value="all">全部执行方式</option>
+          <option value="structure">Structure</option>
+          <option value="llm">LLM</option>
+          <option value="all-op">All</option>
+        </select>
+      </div>
+
+      <div class="section-title"><span>全部规则</span><span id="visibleRuleCount">0</span></div>
+      <div class="rule-list" id="ruleList"></div>
+    </aside>
+
+    <section class="panel graph-panel">
+      <div class="graph-head">
+        <h2>规则执行图</h2>
+        <div class="legend">
+          <span><i class="dot selector"></i>选择节点</span>
+          <span><i class="dot check"></i>检查节点</span>
+          <span><i class="dot llm"></i>LLM 检查</span>
+        </div>
+      </div>
+      <div class="graph-wrap" id="graphWrap">
+        <svg id="graphSvg" aria-label="DAG graph">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"></path>
+            </marker>
+            <marker id="arrowActive" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"></path>
+            </marker>
+          </defs>
+          <g id="viewport">
+            <g id="layers"></g>
+            <g id="edges"></g>
+            <g id="nodes"></g>
+          </g>
+        </svg>
+        <div class="graph-message" id="graphMessage">正在读取 rules.json 和 rule_dag.json…</div>
+        <div class="graph-controls">
+          <button class="icon-btn" id="zoomInBtn" title="放大">＋</button>
+          <button class="icon-btn" id="zoomOutBtn" title="缩小">−</button>
+          <button class="icon-btn" id="resetBtn" title="重置视图">⌂</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel detail-panel">
+      <div class="panel-head">
+        <h2>详情面板</h2>
+        <p>节点信息与对应规则一体化查看</p>
+      </div>
+      <div class="detail-tabs">
+        <button class="tab-btn active" data-tab="node">节点详情</button>
+        <button class="tab-btn" data-tab="rule">规则详情</button>
+      </div>
+      <div class="detail-content" id="detailContent"></div>
+    </aside>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  const DATA_FILES = Object.freeze({
+    rules: './rules.json',
+    dag: './rule_dag.json'
+  });
+
+  let nodesData = [];
+  let rulesData = [];
+  let activeNodeId = null;
+  let activeRuleId = null;
+  let activeTab = 'node';
+  let transform = { x: 30, y: 40, scale: 1 };
+  let graphBounds = { width: 1000, height: 700 };
+
+  const svg = document.getElementById('graphSvg');
+  const viewport = document.getElementById('viewport');
+  const edgesG = document.getElementById('edges');
+  const nodesG = document.getElementById('nodes');
+  const layersG = document.getElementById('layers');
+  const graphWrap = document.getElementById('graphWrap');
+  const detailContent = document.getElementById('detailContent');
+  const ruleList = document.getElementById('ruleList');
+  const searchInput = document.getElementById('searchInput');
+  const typeFilter = document.getElementById('typeFilter');
+  const operationFilter = document.getElementById('operationFilter');
+  const graphMessage = document.getElementById('graphMessage');
+
+  const escapeHtml = value => String(value ?? '')
+    .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+
+  function toast(message) {
+    const el = document.getElementById('toast');
+    el.textContent = message;
+    el.classList.add('show');
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+
+  function getEdges(nodes = nodesData) {
+    const ids = new Set(nodes.map(n => n.node_id));
+    return nodes.flatMap(node => (node.depends_on || [])
+      .filter(dep => ids.has(dep))
+      .map(dep => ({ from: dep, to: node.node_id })));
+  }
+
+  function calculateLevels(nodes) {
+    const map = new Map(nodes.map(n => [n.node_id, n]));
+    const memo = new Map();
+    const visiting = new Set();
+
+    function depth(id) {
+      if (memo.has(id)) return memo.get(id);
+      if (visiting.has(id)) return 0;
+      visiting.add(id);
+      const node = map.get(id);
+      const deps = (node?.depends_on || []).filter(d => map.has(d));
+      const value = deps.length ? Math.max(...deps.map(depth)) + 1 : 0;
+      visiting.delete(id);
+      memo.set(id, value);
+      return value;
+    }
+
+    nodes.forEach(n => depth(n.node_id));
+    return memo;
+  }
+
+  function getVisibleNodes() {
+    const q = searchInput.value.trim().toLowerCase();
+    const type = typeFilter.value;
+    const op = operationFilter.value;
+    return nodesData.filter(n => {
+      const matchesType = type === 'all' || n.node_type === type;
+      const matchesOp = op === 'all' || (op === 'all-op' ? n.operation === 'all' : n.operation === op);
+      if (!matchesType || !matchesOp) return false;
+      if (!q) return true;
+      const haystack = [n.node_id, n.title, n.operation, n.node_type, ...(n.rule_id || []), n.prompt, n.expression].join(' ').toLowerCase();
+      return haystack.includes(q);
+    });
+  }
+
+  function renderStats() {
+    document.getElementById('nodeCount').textContent = nodesData.length;
+    document.getElementById('edgeCount').textContent = getEdges(nodesData).length;
+    document.getElementById('ruleCount').textContent = rulesData.length;
+  }
+
+  function renderRuleList() {
+    const q = searchInput.value.trim().toLowerCase();
+    const visible = rulesData.filter(r => {
+      if (!q) return true;
+      return [r.rule_id, r.source_section, r.target_object, r.behavior, r.examples].join(' ').toLowerCase().includes(q);
+    });
+    document.getElementById('visibleRuleCount').textContent = visible.length;
+    ruleList.innerHTML = visible.map(rule => `
+      <button class="rule-card ${activeRuleId === rule.rule_id ? 'active' : ''}" data-rule-id="${escapeHtml(rule.rule_id)}" style="width:100%; text-align:left;">
+        <div class="rule-card-top">
+          <span class="rule-id">${escapeHtml(rule.rule_id)}</span>
+          <span class="priority">优先级 ${escapeHtml(rule.priority)}</span>
+        </div>
+        <div class="rule-section">${escapeHtml(rule.source_section)}</div>
+        <div class="rule-behavior">${escapeHtml(rule.behavior)}</div>
+      </button>
+    `).join('') || '<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12px;">没有匹配的规则</div>';
+
+    ruleList.querySelectorAll('[data-rule-id]').forEach(el => {
+      el.addEventListener('click', () => selectRule(el.dataset.ruleId));
+    });
+  }
+
+  function wrapText(text, maxChars = 18, maxLines = 2) {
+    const chars = [...String(text || '')];
+    const lines = [];
+    let line = '';
+    for (const ch of chars) {
+      line += ch;
+      const wide = [...line].reduce((sum, c) => sum + (/[^\x00-\xff]/.test(c) ? 1 : 0.55), 0);
+      if (wide >= maxChars) { lines.push(line); line = ''; }
+      if (lines.length >= maxLines) break;
+    }
+    if (line && lines.length < maxLines) lines.push(line);
+    if (lines.join('').length < chars.length && lines.length) lines[lines.length - 1] = lines[lines.length - 1].replace(/.$/, '…');
+    return lines;
+  }
+
+  function renderGraph({ fit = false } = {}) {
+    const visibleNodes = getVisibleNodes();
+    graphMessage.style.display = visibleNodes.length ? 'none' : 'block';
+    edgesG.innerHTML = '';
+    nodesG.innerHTML = '';
+    layersG.innerHTML = '';
+    if (!visibleNodes.length) return;
+
+    const levels = calculateLevels(visibleNodes);
+    const layerMap = new Map();
+    visibleNodes.forEach(n => {
+      const level = levels.get(n.node_id) || 0;
+      if (!layerMap.has(level)) layerMap.set(level, []);
+      layerMap.get(level).push(n);
+    });
+
+    const sortedLevels = [...layerMap.keys()].sort((a,b) => a-b);
+    const nodeW = 238, nodeH = 94, xGap = 96, yGap = 34, marginX = 82, marginY = 62;
+    const maxLayerHeight = Math.max(...sortedLevels.map(l => layerMap.get(l).length * (nodeH + yGap) - yGap));
+    const positions = new Map();
+
+    sortedLevels.forEach(level => {
+      const layer = layerMap.get(level).sort((a,b) => a.node_id.localeCompare(b.node_id, 'zh-CN', {numeric:true}));
+      const totalH = layer.length * nodeH + Math.max(0, layer.length - 1) * yGap;
+      const startY = marginY + Math.max(0, (maxLayerHeight - totalH) / 2);
+      layer.forEach((node, index) => {
+        positions.set(node.node_id, {
+          x: marginX + level * (nodeW + xGap),
+          y: startY + index * (nodeH + yGap),
+          w: nodeW, h: nodeH
+        });
+      });
+    });
+
+    graphBounds = {
+      width: marginX * 2 + sortedLevels.length * nodeW + Math.max(0, sortedLevels.length - 1) * xGap,
+      height: marginY * 2 + maxLayerHeight
+    };
+
+    sortedLevels.forEach(level => {
+      const x = marginX + level * (nodeW + xGap);
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', x);
+      label.setAttribute('y', 30);
+      label.setAttribute('class', 'layer-label');
+      label.textContent = level === 0 ? '入口节点 / 第 0 层' : `执行层级 ${level}`;
+      layersG.appendChild(label);
+    });
+
+    const edges = getEdges(visibleNodes);
+    edges.forEach(edge => {
+      const a = positions.get(edge.from), b = positions.get(edge.to);
+      if (!a || !b) return;
+      const x1 = a.x + a.w, y1 = a.y + a.h / 2;
+      const x2 = b.x, y2 = b.y + b.h / 2;
+      const mid = (x1 + x2) / 2;
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', '#94a3b8');
+      path.setAttribute('stroke-width', '2');
+      path.setAttribute('marker-end', 'url(#arrow)');
+      path.setAttribute('class', 'edge');
+      path.dataset.from = edge.from;
+      path.dataset.to = edge.to;
+      edgesG.appendChild(path);
+    });
+
+    visibleNodes.forEach(node => {
+      const p = positions.get(node.node_id);
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', `node-group ${activeNodeId === node.node_id ? 'active' : ''}`);
+      g.setAttribute('transform', `translate(${p.x}, ${p.y})`);
+      g.dataset.nodeId = node.node_id;
+
+      const accent = node.node_type === 'selector' ? '#059669' : (node.operation === 'llm' ? '#d97706' : '#7c3aed');
+      const fill = node.node_type === 'selector' ? '#ecfdf5' : (node.operation === 'llm' ? '#fffbeb' : '#f5f3ff');
+
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('class', 'node-bg');
+      rect.setAttribute('width', nodeW); rect.setAttribute('height', nodeH);
+      rect.setAttribute('rx', 13); rect.setAttribute('fill', fill);
+      rect.setAttribute('stroke', '#d5dfec'); rect.setAttribute('stroke-width', '1.5');
+      g.appendChild(rect);
+
+      const strip = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      strip.setAttribute('width', 6); strip.setAttribute('height', nodeH);
+      strip.setAttribute('rx', 3); strip.setAttribute('fill', accent);
+      g.appendChild(strip);
+
+      const idText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      idText.setAttribute('x', 18); idText.setAttribute('y', 21); idText.setAttribute('class', 'node-rule');
+      idText.textContent = node.node_id;
+      g.appendChild(idText);
+
+      wrapText(node.title, 19, 2).forEach((line, i) => {
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('x', 18); t.setAttribute('y', 43 + i * 17); t.setAttribute('class', 'node-title');
+        t.textContent = line; g.appendChild(t);
+      });
+
+      const meta = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      meta.setAttribute('x', 18); meta.setAttribute('y', 84); meta.setAttribute('class', 'node-meta');
+      meta.textContent = `${node.node_type.toUpperCase()} · ${String(node.operation).toUpperCase()} · 规则 ${node.rule_id?.length || 0}`;
+      g.appendChild(meta);
+
+      g.addEventListener('click', e => { e.stopPropagation(); selectNode(node.node_id); });
+      nodesG.appendChild(g);
+    });
+
+    applyHighlighting();
+    if (fit) fitGraph(); else applyTransform();
+  }
+
+  function applyHighlighting() {
+    const nodeEls = [...nodesG.querySelectorAll('.node-group')];
+    const edgeEls = [...edgesG.querySelectorAll('.edge')];
+
+    nodeEls.forEach(el => el.classList.remove('dimmed', 'active'));
+    edgeEls.forEach(el => { el.classList.remove('dimmed', 'highlight'); el.setAttribute('marker-end', 'url(#arrow)'); });
+
+    if (activeNodeId) {
+      const related = new Set([activeNodeId]);
+      nodesData.forEach(n => {
+        if ((n.depends_on || []).includes(activeNodeId)) related.add(n.node_id);
+      });
+      const active = nodesData.find(n => n.node_id === activeNodeId);
+      (active?.depends_on || []).forEach(id => related.add(id));
+
+      nodeEls.forEach(el => {
+        if (el.dataset.nodeId === activeNodeId) el.classList.add('active');
+        else if (!related.has(el.dataset.nodeId)) el.classList.add('dimmed');
+      });
+      edgeEls.forEach(el => {
+        if (el.dataset.from === activeNodeId || el.dataset.to === activeNodeId) {
+          el.classList.add('highlight'); el.setAttribute('marker-end', 'url(#arrowActive)');
+        } else el.classList.add('dimmed');
+      });
+    } else if (activeRuleId) {
+      const related = new Set(nodesData.filter(n => (n.rule_id || []).includes(activeRuleId)).map(n => n.node_id));
+      nodeEls.forEach(el => { if (!related.has(el.dataset.nodeId)) el.classList.add('dimmed'); });
+      edgeEls.forEach(el => { if (!related.has(el.dataset.from) && !related.has(el.dataset.to)) el.classList.add('dimmed'); });
+    }
+  }
+
+  function applyTransform() {
+    viewport.setAttribute('transform', `translate(${transform.x} ${transform.y}) scale(${transform.scale})`);
+  }
+
+  function fitGraph() {
+    const rect = graphWrap.getBoundingClientRect();
+    const padding = 42;
+    const scale = Math.min((rect.width - padding * 2) / graphBounds.width, (rect.height - padding * 2) / graphBounds.height, 1.2);
+    transform.scale = Math.max(0.2, scale);
+    transform.x = (rect.width - graphBounds.width * transform.scale) / 2;
+    transform.y = (rect.height - graphBounds.height * transform.scale) / 2;
+    applyTransform();
+  }
+
+  function selectNode(id) {
+    activeNodeId = id;
+    activeRuleId = null;
+    activeTab = 'node';
+    updateTabs();
+    renderGraph();
+    renderRuleList();
+    renderDetails();
+  }
+
+  function selectRule(id) {
+    activeRuleId = id;
+    activeNodeId = null;
+    activeTab = 'rule';
+    updateTabs();
+    renderRuleList();
+    renderGraph();
+    renderDetails();
+  }
+
+  function updateTabs() {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === activeTab));
+  }
+
+  function renderDetails() {
+    if (activeTab === 'node') renderNodeDetails(); else renderRuleDetails();
+  }
+
+  function renderNodeDetails() {
+    const node = nodesData.find(n => n.node_id === activeNodeId);
+    if (!node) {
+      detailContent.innerHTML = `<div class="empty-detail"><div><div class="empty-icon">⌁</div><strong>选择一个 DAG 节点</strong><p>点击画布中的节点，查看依赖关系、执行方式、表达式和对应规则。</p></div></div>`;
+      return;
+    }
+    const relatedRules = (node.rule_id || []).map(id => rulesData.find(r => r.rule_id === id));
+    const childNodes = nodesData.filter(n => (n.depends_on || []).includes(node.node_id));
+
+    detailContent.innerHTML = `
+      <div class="detail-block">
+        <h3>节点基本信息</h3>
+        <div class="detail-grid">
+          <div class="label">节点 ID</div><div class="value"><strong>${escapeHtml(node.node_id)}</strong></div>
+          <div class="label">标题</div><div class="value">${escapeHtml(node.title)}</div>
+          <div class="label">节点类型</div><div class="value"><span class="badge ${escapeHtml(node.node_type)}">${escapeHtml(node.node_type)}</span></div>
+          <div class="label">执行方式</div><div class="value"><span class="badge ${escapeHtml(node.operation)}">${escapeHtml(node.operation)}</span></div>
+          <div class="label">前置节点</div><div class="value">${node.depends_on?.length ? `<div class="chips">${node.depends_on.map(id => `<button class="chip" data-node-link="${escapeHtml(id)}">${escapeHtml(id)}</button>`).join('')}</div>` : '无，属于入口节点'}</div>
+          <div class="label">后继节点</div><div class="value">${childNodes.length ? `<div class="chips">${childNodes.map(n => `<button class="chip" data-node-link="${escapeHtml(n.node_id)}">${escapeHtml(n.node_id)}</button>`).join('')}</div>` : '无'}</div>
+        </div>
+      </div>
+      <div class="detail-block">
+        <h3>关联规则</h3>
+        <div style="padding:12px">
+          <div class="chips">${(node.rule_id || []).map((id, i) => `<button class="chip ${relatedRules[i] ? '' : 'missing'}" data-rule-link="${escapeHtml(id)}">${escapeHtml(id)}${relatedRules[i] ? '' : '（规则详情未导入）'}</button>`).join('') || '无'}</div>
+        </div>
+      </div>
+      ${node.expression ? `<div class="detail-block"><h3>结构化表达式</h3><pre class="code">${escapeHtml(node.expression)}</pre></div>` : ''}
+      ${node.prompt ? `<div class="detail-block"><h3>LLM Prompt</h3><pre class="code">${escapeHtml(node.prompt)}</pre></div>` : ''}
+    `;
+
+    detailContent.querySelectorAll('[data-node-link]').forEach(el => el.addEventListener('click', () => selectNode(el.dataset.nodeLink)));
+    detailContent.querySelectorAll('[data-rule-link]').forEach(el => el.addEventListener('click', () => {
+      const id = el.dataset.ruleLink;
+      if (rulesData.some(r => r.rule_id === id)) selectRule(id); else toast(`规则 ${id} 尚未导入规则库`);
+    }));
+  }
+
+  function renderRuleDetails() {
+    const rule = rulesData.find(r => r.rule_id === activeRuleId);
+    if (!rule) {
+      detailContent.innerHTML = `<div class="empty-detail"><div><div class="empty-icon">▤</div><strong>选择一条规则</strong><p>从左侧规则列表中点击规则，查看规则来源、检查对象和关联节点。</p></div></div>`;
+      return;
+    }
+    const relatedNodes = nodesData.filter(n => (n.rule_id || []).includes(rule.rule_id));
+    detailContent.innerHTML = `
+      <div class="rule-detail-title">
+        <div><h2>${escapeHtml(rule.rule_id)}</h2><p>${escapeHtml(rule.source_section)} · 第 ${escapeHtml(rule.source_page)} 页</p></div>
+        <span class="priority">优先级 ${escapeHtml(rule.priority)}</span>
+      </div>
+      <div class="metric-row">
+        <div class="metric"><strong>${escapeHtml(rule.priority)}</strong><span>优先级</span></div>
+        <div class="metric"><strong>${escapeHtml(rule.complexity)}</strong><span>复杂度</span></div>
+      </div>
+      <div class="detail-block"><h3>检查对象</h3><div class="body-text" style="padding:12px">${escapeHtml(rule.target_object)}</div></div>
+      <div class="detail-block"><h3>检查行为</h3><div class="body-text" style="padding:12px">${escapeHtml(rule.behavior)}</div></div>
+      ${rule.examples ? `<div class="detail-block"><h3>示例</h3><div style="padding:12px"><div class="example">${escapeHtml(rule.examples)}</div></div></div>` : ''}
+      <div class="detail-block">
+        <h3>关联 DAG 节点（${relatedNodes.length}）</h3>
+        <div style="padding:5px 10px 12px">
+          ${relatedNodes.map(n => `<button class="related-node" data-node-link="${escapeHtml(n.node_id)}" style="display:block;width:100%;text-align:left"><strong>${escapeHtml(n.node_id)}</strong><br><span style="color:#64748b">${escapeHtml(n.title)}</span></button>`).join('') || '<div style="padding:12px;color:#94a3b8;font-size:12px">当前 DAG 中没有引用此规则的节点</div>'}
+        </div>
+      </div>
+    `;
+    detailContent.querySelectorAll('[data-node-link]').forEach(el => el.addEventListener('click', () => selectNode(el.dataset.nodeLink)));
+  }
+
+  function normalizeFetchError(error) {
+    if (location.protocol === 'file:') {
+      return '浏览器不允许通过 file:// 直接读取同目录 JSON。请使用 HTTP 服务打开本页面，例如在 output 目录执行：python -m http.server 8000';
+    }
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  async function fetchJson(url, label) {
+    let response;
+    try {
+      response = await fetch(url, { cache: 'no-store' });
+    } catch (error) {
+      throw new Error(`${label} 请求失败：${normalizeFetchError(error)}`);
+    }
+
+    if (!response.ok) {
+      throw new Error(`${label} 加载失败：HTTP ${response.status} ${response.statusText || ''}`.trim());
+    }
+
+    try {
+      return await response.json();
+    } catch (error) {
+      throw new Error(`${label} 不是有效的 JSON：${error.message}`);
+    }
+  }
+
+  async function loadGraphData({ showSuccess = false } = {}) {
+    graphMessage.style.display = 'block';
+    graphMessage.innerHTML = '<strong>正在加载数据</strong><p>读取 rules.json 和 rule_dag.json…</p>';
+
+    try {
+      const [rulesJson, dagJson] = await Promise.all([
+        fetchJson(DATA_FILES.rules, 'rules.json'),
+        fetchJson(DATA_FILES.dag, 'rule_dag.json')
+      ]);
+
+      const loadedRules = validateRules(rulesJson);
+      const loadedNodes = validateNodes(dagJson);
+
+      // 只有两个文件均校验通过后才整体替换，避免页面进入半加载状态。
+      rulesData = loadedRules;
+      nodesData = loadedNodes;
+      activeNodeId = null;
+      activeRuleId = null;
+      activeTab = 'node';
+      searchInput.value = '';
+      typeFilter.value = 'all';
+      operationFilter.value = 'all';
+
+      renderAll(true);
+      if (showSuccess) {
+        toast(`已加载 ${nodesData.length} 个节点、${rulesData.length} 条规则`);
+      }
+      console.info('DAG 数据加载完成', {
+        nodes: nodesData.length,
+        rules: rulesData.length,
+        files: DATA_FILES
+      });
+    } catch (error) {
+      nodesData = [];
+      rulesData = [];
+      activeNodeId = null;
+      activeRuleId = null;
+      renderStats();
+      renderRuleList();
+      renderDetails();
+
+      const message = normalizeFetchError(error);
+      graphMessage.style.display = 'block';
+      graphMessage.innerHTML = `
+        <strong style="color:#dc2626">数据加载失败</strong>
+        <p style="max-width:560px;line-height:1.7">${escapeHtml(message)}</p>
+        <p style="max-width:560px;line-height:1.7">
+          请确认 index.html、rules.json、rule_dag.json 位于同一目录，并通过 HTTP 服务访问页面。
+        </p>
+      `;
+      console.error('DAG 数据加载失败：', error);
+      toast('数据加载失败，请查看页面提示或浏览器控制台');
+    }
+  }
+
+  function validateNodes(data) {
+    const arr = Array.isArray(data) ? data : data.nodes;
+    if (!Array.isArray(arr)) throw new Error('节点 JSON 必须是数组，或包含 nodes 数组');
+    const ids = new Set();
+    arr.forEach((n, i) => {
+      if (!n.node_id || !n.node_type || !n.title || !Array.isArray(n.depends_on)) throw new Error(`第 ${i + 1} 个节点缺少必要字段`);
+      if (ids.has(n.node_id)) throw new Error(`节点 ID 重复：${n.node_id}`);
+      ids.add(n.node_id);
+    });
+    return arr;
+  }
+
+  function validateRules(data) {
+    const arr = Array.isArray(data) ? data : data.rules;
+    if (!Array.isArray(arr)) throw new Error('规则 JSON 必须是数组，或包含 rules 数组');
+    arr.forEach((r, i) => { if (!r.rule_id || !r.behavior) throw new Error(`第 ${i + 1} 条规则缺少 rule_id 或 behavior`); });
+    return arr;
+  }
+
+  async function readJsonFile(file) {
+    const text = await file.text();
+    return JSON.parse(text);
+  }
+
+  document.getElementById('nodeFile').addEventListener('change', async e => {
+    try {
+      nodesData = validateNodes(await readJsonFile(e.target.files[0]));
+      activeNodeId = activeRuleId = null;
+      renderAll(true); toast(`已导入 ${nodesData.length} 个节点`);
+    } catch (err) { toast(`导入失败：${err.message}`); }
+    e.target.value = '';
+  });
+
+  document.getElementById('ruleFile').addEventListener('change', async e => {
+    try {
+      rulesData = validateRules(await readJsonFile(e.target.files[0]));
+      activeNodeId = activeRuleId = null;
+      renderAll(false); toast(`已导入 ${rulesData.length} 条规则`);
+    } catch (err) { toast(`导入失败：${err.message}`); }
+    e.target.value = '';
+  });
+
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify({ nodes: nodesData, rules: rulesData }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'dag-rules-export.json'; a.click();
+    URL.revokeObjectURL(url); toast('当前节点和规则数据已导出');
+  });
+
+  document.getElementById('reloadDataBtn').addEventListener('click', () => loadGraphData({ showSuccess: true }));
+
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+    activeTab = btn.dataset.tab; updateTabs(); renderDetails();
+  }));
+
+  searchInput.addEventListener('input', () => { renderRuleList(); renderGraph(); });
+  typeFilter.addEventListener('change', () => renderGraph({ fit: true }));
+  operationFilter.addEventListener('change', () => renderGraph({ fit: true }));
+
+  document.getElementById('fitBtn').addEventListener('click', fitGraph);
+  document.getElementById('resetBtn').addEventListener('click', fitGraph);
+  document.getElementById('zoomInBtn').addEventListener('click', () => zoomAt(1.2));
+  document.getElementById('zoomOutBtn').addEventListener('click', () => zoomAt(0.84));
+
+  function zoomAt(factor, cx = graphWrap.clientWidth / 2, cy = graphWrap.clientHeight / 2) {
+    const next = Math.min(2.6, Math.max(0.16, transform.scale * factor));
+    const ratio = next / transform.scale;
+    transform.x = cx - (cx - transform.x) * ratio;
+    transform.y = cy - (cy - transform.y) * ratio;
+    transform.scale = next;
+    applyTransform();
+  }
+
+  svg.addEventListener('wheel', e => {
+    e.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    zoomAt(e.deltaY < 0 ? 1.12 : 0.89, e.clientX - rect.left, e.clientY - rect.top);
+  }, { passive: false });
+
+  let dragging = false, dragStart = null;
+  svg.addEventListener('pointerdown', e => {
+    if (e.target.closest?.('.node-group')) return;
+    dragging = true; svg.setPointerCapture(e.pointerId);
+    dragStart = { x: e.clientX, y: e.clientY, tx: transform.x, ty: transform.y };
+  });
+  svg.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    transform.x = dragStart.tx + e.clientX - dragStart.x;
+    transform.y = dragStart.ty + e.clientY - dragStart.y;
+    applyTransform();
+  });
+  svg.addEventListener('pointerup', () => dragging = false);
+  svg.addEventListener('click', e => {
+    if (e.target === svg || e.target.id === 'viewport' || e.target.id === 'layers') {
+      activeNodeId = activeRuleId = null; renderGraph(); renderRuleList(); renderDetails();
+    }
+  });
+
+  window.addEventListener('resize', () => fitGraph());
+
+  function renderAll(fit = true) {
+    renderStats(); renderRuleList(); renderGraph({ fit }); renderDetails();
+  }
+
+  document.addEventListener('DOMContentLoaded', () => loadGraphData());
+</script>
+</body>
+</html>
