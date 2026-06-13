@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>规则检查 DAG 可视化平台</title>
+  <title>规则可视化</title>
   <style>
     :root {
       --bg: #f4f7fb;
@@ -252,14 +252,13 @@
     <div class="brand">
       <div class="brand-mark">DAG</div>
       <div>
-        <h1>规则检查 DAG 可视化平台</h1>
-        <p>自动读取同目录 rules.json 与 rule_dag.json</p>
+        <h1>规则可视化平台</h1>
       </div>
     </div>
     <div class="toolbar">
-      <label class="btn optional" for="nodeFile">导入节点 JSON</label>
+      <label class="btn optional" for="nodeFile">导入节点</label>
       <input id="nodeFile" class="file-input" type="file" accept=".json,application/json" />
-      <label class="btn optional" for="ruleFile">导入规则 JSON</label>
+      <label class="btn optional" for="ruleFile">导入规则 </label>
       <input id="ruleFile" class="file-input" type="file" accept=".json,application/json" />
       <button class="btn" id="exportBtn">导出当前数据</button>
       <button class="btn" id="reloadDataBtn">重新加载数据</button>
